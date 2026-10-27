@@ -1,0 +1,36 @@
+services:
+  - type: web            # web service with /health so Render keeps it alive; needs a paid (always-on) instance
+    name: mhn-media-archiver
+    runtime: python
+    plan: starter
+    region: singapore
+    buildCommand: pip install -r requirements.txt
+    startCommand: python main.py
+    healthCheckPath: /
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: TG_API_ID
+        sync: false
+      - key: TG_API_HASH
+        sync: false
+      - key: TG_SESSION
+        sync: false
+      - key: TG_GROUP
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: GOOGLE_REFRESH_TOKEN
+        sync: false
+      - key: DRIVE_ROOT_FOLDER_ID
+        value: 1cS-wjvZ3HwF2OqwwKP3Vuzvo2b0y5jdm
+      - key: SHEET_ID
+        value: 1bmgnMhhV5SOox8Nt-rFPjtJ674Ttuc1q9PrkH-buQho
+      - key: GEMINI_API_KEY        # or ANTHROPIC_API_KEY instead
+        sync: false
+      - key: CLASSIFIER_MODEL
+        value: gemini-flash-lite-latest
+      - key: BACKFILL
+        value: "true"

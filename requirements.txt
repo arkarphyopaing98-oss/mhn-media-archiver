@@ -1,0 +1,7 @@
+telethon==1.36.0
+cryptg>=0.4
+google-api-python-client>=2.100
+google-auth>=2.23
+aiohttp>=3.9
+opencv-python-headless>=4.9
+imageio-ffmpeg>=0.5
