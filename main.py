@@ -14,7 +14,6 @@ from telethon.sessions import StringSession
 from app.archiver import Archiver
 from app.classifier import Classifier
 from app.config import Config
-from app.google_io import make_clients
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("mhn-archiver")
@@ -25,8 +24,8 @@ async def start_health_server(port: int, archiver_ref: dict) -> None:
         return web.Response(text="ok")
 
     async def status(_):
-        a = archiver_ref.get("a")
-        return web.json_response({"stats": a.stats if a else {}, "archived_ids": len(a.seen) if a else 0})
+        arcs = archiver_ref.get("all") or []
+        return web.json_response({a.profile.key: {"stats": a.stats, "archived_ids": len(a.seen)} for a in arcs})
 
     app = web.Application()
     app.router.add_get("/", health)
@@ -49,20 +48,40 @@ async def main() -> None:
 
     client = TelegramClient(StringSession(cfg.tg_session), cfg.tg_api_id, cfg.tg_api_hash)
     await client.start()
-    group = int(cfg.tg_group) if cfg.tg_group.lstrip("-").isdigit() else cfg.tg_group
-    chat = await client.get_entity(group)
-    log.info("Watching group: %s", getattr(chat, "title", group))
 
-    drive, sheet = make_clients(cfg)
-    archiver = Archiver(cfg, client, chat, drive, sheet, Classifier(cfg.classifier_key, cfg.classifier_model, cfg.classifier_provider))
-    ref["a"] = archiver
-    await archiver.load_seen()
+    # Tenants: the main group from TG_GROUP/DRIVE_ROOT_FOLDER_ID/SHEET_ID (profile "mhn" unless PROFILE is set),
+    # plus optional EXTRA_TENANTS='[{"profile":"rm","group":-100..,"drive_root":"..","sheet_id":".."}]'.
+    import json, os
+    from app.google_io import Drive, Log, _creds
+    from app.taxonomy import PROFILES
+    tenants = [{"profile": os.environ.get("PROFILE", "mhn"), "group": cfg.tg_group,
+                "drive_root": cfg.drive_root_folder_id, "sheet_id": cfg.sheet_id}]
+    tenants += json.loads(os.environ.get("EXTRA_TENANTS", "[]") or "[]")
+    creds = _creds(cfg.google_client_id, cfg.google_client_secret, cfg.google_refresh_token)
+    lock = asyncio.Lock()
+    archivers = []
+    for t in tenants:
+        g = str(t["group"])
+        chat = await client.get_entity(int(g) if g.lstrip("-").isdigit() else g)
+        prof = PROFILES[t["profile"]]
+        a = Archiver(cfg, client, chat, Drive(creds, t["drive_root"]), Log(creds, t["sheet_id"], t.get("sheet_tab", "Log")),
+                     Classifier(cfg.classifier_key, cfg.classifier_model, cfg.classifier_provider, prof), prof, lock)
+        await a.load_seen()
+        archivers.append(a)
+        log.info("[%s] watching group: %s", prof.key, getattr(chat, "title", g))
 
-    @client.on(events.NewMessage(chats=chat))
-    async def _(event):  # noqa: ANN001
-        asyncio.create_task(archiver.on_new_message(event.message))
+        def _handler(arch):
+            async def h(event):  # noqa: ANN001
+                asyncio.create_task(arch.on_new_message(event.message))
+            return h
+        client.add_event_handler(_handler(a), events.NewMessage(chats=chat))
+    ref["a"] = archivers[0]
+    ref["all"] = archivers
 
-    asyncio.create_task(archiver.catch_up(cfg.backfill, cfg.backfill_limit))
+    async def catch_up_all():
+        for a in archivers:
+            await a.catch_up(cfg.backfill, cfg.backfill_limit)
+    asyncio.create_task(catch_up_all())
     await client.run_until_disconnected()
 
 

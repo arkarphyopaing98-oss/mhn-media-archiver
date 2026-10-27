@@ -13,24 +13,34 @@ from .taxonomy import MATERIALS, PILLARS, PRODUCT_TYPES
 
 log = logging.getLogger(__name__)
 
-SYSTEM = f"""You sort raw marketing footage for MHN Window & Door Center (Myanmar).
-MHN manufactures and wholesales UPVC and aluminium windows/doors, plus steel and iron rod.
+def system_prompt(p) -> str:
+    pillar_guide = {
+        "mhn": ("Pillar guide: factory machines/cutting/welding/QC/loading = BEHIND THE SCENES; fitting on a building "
+                "site or a finished site = INSTALLATION; a finished product, close-ups, features, locks = PRODUCT SHOWCASE; "
+                "a customer speaking or a review = CUSTOMER & TESTIMONIAL; a staff member explaining, comparing or giving "
+                "tips/warranty info = KNOWLEDGE & FAQ; team members, events, company story = TEAM & STORY."),
+        "rm": ("Pillar guide: shop floor, stock piles, unloading new stock = SHOP & STOCK; trucks, loading for a customer, "
+               "arriving at a site = DELIVERY; close-ups of a product, quality, sizes = PRODUCT SHOWCASE; a customer "
+               "speaking or a review = CUSTOMER & TESTIMONIAL; staff explaining, tips, how to choose = KNOWLEDGE & FAQ; "
+               "team members, events, shop story = TEAM & STORY."),
+    }.get(p.key, "")
+    return f"""You sort raw marketing footage. {p.business}
 Staff post phone videos/photos in a Telegram group with a short Burmese or English note.
 
 Return ONLY a JSON object with these keys:
-- material: one of {MATERIALS}
-- product_type: one of {PRODUCT_TYPES}
-- pillar: one of {PILLARS}
-- banned: true if the item shows or mentions a folding door, French door or frosted glass, else false
+- material: one of {p.materials}
+- product_type: one of {p.product_types}
+- pillar: one of {p.pillars}
+- {p.banned_rule}
 - confidence: number 0-1, how sure you are of material AND pillar
 - summary_my: one Burmese sentence describing what the footage shows
 - hook_idea: one short Burmese TikTok hook line (max 12 words) this footage could open with
 
-Pillar guide: factory machines/cutting/welding/QC/loading = BEHIND THE SCENES; fitting on a building
-site or a finished site = INSTALLATION; a finished product, close-ups, features, locks = PRODUCT SHOWCASE;
-a customer speaking or a review = CUSTOMER & TESTIMONIAL; a staff member explaining, comparing or
-giving tips/warranty info = KNOWLEDGE & FAQ; team members, events, company story = TEAM & STORY.
-Use GENERAL material when it is not about one material. Never invent facts that are not in the note or image."""
+{pillar_guide}
+Use GENERAL material when it is not about one product group. Never invent facts that are not in the note or image."""
+
+
+SYSTEM = system_prompt(__import__("app.taxonomy", fromlist=["PROFILES"]).PROFILES["mhn"])
 
 
 @dataclass
@@ -48,7 +58,7 @@ class Classification:
         return self.confidence >= 0.55
 
 
-def parse_reply(text: str) -> Classification:
+def parse_reply(text: str, profile=None) -> Classification:
     match = re.search(r"\{.*\}", text or "", re.S)
     if not match:
         return Classification()
@@ -65,11 +75,12 @@ def parse_reply(text: str) -> Classification:
         summary_my=str(data.get("summary_my", "")),
         hook_idea=str(data.get("hook_idea", "")),
     )
-    if c.material not in MATERIALS:
+    mats, pils, types = (profile.materials, profile.pillars, profile.product_types) if profile else (MATERIALS, PILLARS, PRODUCT_TYPES)
+    if c.material not in mats:
         c.material, c.confidence = "GENERAL", min(c.confidence, 0.4)
-    if c.pillar not in PILLARS:
+    if c.pillar not in pils:
         c.pillar, c.confidence = "", 0.0
-    if c.product_type not in PRODUCT_TYPES:
+    if c.product_type not in types:
         c.product_type = "Other"
     return c
 
@@ -77,8 +88,11 @@ def parse_reply(text: str) -> Classification:
 class Classifier:
     """provider = "anthropic" (needs ANTHROPIC_API_KEY) or "gemini" (needs GEMINI_API_KEY)."""
 
-    def __init__(self, api_key: str, model: str, provider: str = "anthropic") -> None:
+    def __init__(self, api_key: str, model: str, provider: str = "anthropic", profile=None) -> None:
+        from .taxonomy import PROFILES
         self.provider, self.model, self.key = provider, model, api_key
+        self.profile = profile or PROFILES["mhn"]
+        self.system = system_prompt(self.profile)
         if provider == "anthropic":
             from anthropic import AsyncAnthropic
             self.client = AsyncAnthropic(api_key=api_key)
@@ -89,7 +103,7 @@ class Classifier:
             content.append({"type": "image", "source": {"type": "base64", "media_type": "image/jpeg",
                                                         "data": base64.b64encode(thumb).decode()}})
         content.append({"type": "text", "text": f"Media type: {media_type}\nTeam note:\n{story or '(no note)'}"})
-        resp = await self.client.messages.create(model=self.model, max_tokens=400, system=SYSTEM,
+        resp = await self.client.messages.create(model=self.model, max_tokens=400, system=self.system,
                                                  messages=[{"role": "user", "content": content}])
         return "".join(b.text for b in resp.content if getattr(b, "type", "") == "text")
 
@@ -98,7 +112,7 @@ class Classifier:
         if thumb:
             parts.append({"inline_data": {"mime_type": "image/jpeg", "data": base64.b64encode(thumb).decode()}})
         parts.append({"text": f"Media type: {media_type}\nTeam note:\n{story or '(no note)'}"})
-        body = {"system_instruction": {"parts": [{"text": SYSTEM}]}, "contents": [{"role": "user", "parts": parts}],
+        body = {"system_instruction": {"parts": [{"text": self.system}]}, "contents": [{"role": "user", "parts": parts}],
                 "generationConfig": {"maxOutputTokens": 600, "responseMimeType": "application/json"}}
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent"
         async with aiohttp.ClientSession() as s:
@@ -112,7 +126,7 @@ class Classifier:
     async def classify(self, story: str, media_type: str, thumb_jpeg: bytes | None) -> Classification:
         try:
             fn = self._gemini if self.provider == "gemini" else self._anthropic
-            return parse_reply(await fn(story, media_type, thumb_jpeg))
+            return parse_reply(await fn(story, media_type, thumb_jpeg), self.profile)
         except Exception:  # network/API issues must never stop archiving
             log.exception("Classification failed; filing under _TO SORT")
             return Classification()

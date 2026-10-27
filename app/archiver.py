@@ -17,7 +17,7 @@ from .proxy import PROXY_ROOT, make_proxy
 from .config import Config
 from .google_io import Drive, Log
 from .story import Msg, build_story
-from .taxonomy import TO_SORT, folder_path, is_banned
+from .taxonomy import TO_SORT, PROFILES
 
 log = logging.getLogger(__name__)
 TMP_DIR = "/tmp/mhn-archiver"
@@ -62,11 +62,12 @@ def to_msg(m: Message, include_photos: bool) -> Msg:
 
 class Archiver:
     def __init__(self, cfg: Config, client: TelegramClient, chat, drive: Drive, sheet: Log,
-                 classifier: Classifier) -> None:
+                 classifier: Classifier, profile=None, lock: asyncio.Lock | None = None) -> None:
         self.cfg, self.client, self.chat = cfg, client, chat
         self.drive, self.sheet, self.classifier = drive, sheet, classifier
+        self.profile = profile or PROFILES["mhn"]
         self.seen: set[int] = set()
-        self.lock = asyncio.Lock()
+        self.lock = lock or asyncio.Lock()  # shared lock = one file at a time across all groups (low memory)
         self.tz = ZoneInfo(cfg.timezone)
         self.stats = {"archived": 0, "to_sort": 0, "excluded": 0, "skipped": 0, "errors": 0}
         os.makedirs(TMP_DIR, exist_ok=True)
@@ -134,8 +135,8 @@ class Archiver:
             qc_verdict, qc_notes = await asyncio.to_thread(run_qc, local_path, kind)
             thumb = await self.thumbnail(m, kind, local_path)
             c = await self.classifier.classify(story, kind, thumb)
-            banned = c.banned or is_banned(story)
-            path = folder_path(c.material, c.pillar, c.confident)
+            banned = c.banned or self.profile.is_banned(story)
+            path = self.profile.folder_path(c.material, c.pillar, c.confident)
             pillar_label = c.pillar if path != [TO_SORT] else TO_SORT
             name = (f"{local_date:%Y%m%d}_{slug(c.material)}_{slug(c.product_type)}_"
                     f"{slug(pillar_label)}_{m.id}{ext}")

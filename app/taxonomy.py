@@ -38,3 +38,49 @@ def folder_path(material: str, pillar: str, confident: bool) -> list[str]:
 def is_banned(text: str) -> bool:
     low = (text or "").lower()
     return any(k in low for k in BANNED_KEYWORDS)
+
+
+# ---------------------------------------------------------------------------
+# Business profiles (one archiver service can watch several Telegram groups).
+from dataclasses import dataclass, field as _field
+
+
+@dataclass(frozen=True)
+class Profile:
+    key: str
+    business: str                 # one-paragraph description for the classifier
+    materials: list               # folder level 1 (product group)
+    pillars: list                 # folder level 2
+    product_types: list
+    banned: list = _field(default_factory=list)
+    banned_rule: str = ""
+
+    def folder_path(self, material: str, pillar: str, confident: bool) -> list:
+        if not confident or material not in self.materials or pillar not in self.pillars:
+            return [TO_SORT]
+        return [material, pillar]
+
+    def is_banned(self, text: str) -> bool:
+        low = (text or "").lower()
+        return any(k in low for k in self.banned)
+
+
+PROFILES = {
+    "mhn": Profile(
+        key="mhn",
+        business=("MHN Window & Door Center (Myanmar) manufactures and wholesales UPVC and aluminium windows/doors, "
+                  "plus steel and iron rod."),
+        materials=MATERIALS, pillars=PILLARS, product_types=PRODUCT_TYPES, banned=BANNED_KEYWORDS,
+        banned_rule="banned: true if the item shows or mentions a folding door, French door or frosted glass, else false",
+    ),
+    "rm": Profile(
+        key="rm",
+        business=("RM Mahar Nwe (မဟာနွယ်) is a building-materials shop in Hlaing Tharyar, Yangon, selling retail and "
+                  "wholesale: bricks (အုတ်), sand (သဲ), stone/aggregate (ကျောက်), cement (ဘိလပ်မြေ), deformed bar, "
+                  "angle bar, flat bar, coil and steel beams."),
+        materials=["BRICK", "SAND & STONE", "CEMENT", "DEFORMED BAR", "ANGLE & FLAT BAR", "COIL", "BEAM", "GENERAL"],
+        pillars=["SHOP & STOCK", "DELIVERY", "PRODUCT SHOWCASE", "CUSTOMER & TESTIMONIAL", "KNOWLEDGE & FAQ", "TEAM & STORY"],
+        product_types=["Retail order", "Wholesale order", "Stock arrival", "Loading", "Site delivery", "Product close-up", "Other"],
+        banned=[], banned_rule="banned: always false",
+    ),
+}
