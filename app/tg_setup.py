@@ -57,6 +57,8 @@ async def run_setup_server(port: int) -> None:
                 body = (f"<p>✅ Logged in as <b>{html.escape(me.first_name or '')}</b>.</p>"
                         "<p>Copy this into the <b>TG_SESSION</b> environment variable (shown only once):</p>"
                         f'<textarea readonly style="width:100%;height:160px">{html.escape(s)}</textarea>')
+                groups = [f"<li>{html.escape(d.name)} — <code>{d.id}</code></li>" async for d in c.iter_dialogs(limit=200) if d.is_group]
+                body += "<p>Your groups (copy the Product History id into <b>TG_GROUP</b>):</p><ul>" + "".join(groups) + "</ul>"
                 await c.disconnect()
                 return web.Response(content_type="text/html", text=PAGE.format(body=body))
             if data.get("send"):
