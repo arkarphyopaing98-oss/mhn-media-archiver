@@ -36,6 +36,24 @@ async def start_health_server(port: int, archiver_ref: dict) -> None:
     log.info("Health server on :%s", port)
 
 
+async def resolve_chat(client, g: str):
+    """Numeric id, @username, or an invite link (https://t.me/+HASH) which is joined if needed."""
+    if g.lstrip("-").isdigit():
+        return await client.get_entity(int(g))
+    if "t.me/+" in g or "joinchat/" in g:
+        from telethon.tl.functions.messages import CheckChatInviteRequest, ImportChatInviteRequest
+        from telethon.tl.types import ChatInviteAlready
+        h = g.rstrip("/").split("/")[-1].lstrip("+")
+        inv = await client(CheckChatInviteRequest(h))
+        if isinstance(inv, ChatInviteAlready):
+            chat = inv.chat
+        else:
+            chat = (await client(ImportChatInviteRequest(h))).chats[0]
+        log.info("Invite link resolved to chat id %s (%s)", chat.id, getattr(chat, "title", ""))
+        return chat
+    return await client.get_entity(g)
+
+
 async def main() -> None:
     import os
     if not os.environ.get("TG_SESSION"):
@@ -62,7 +80,7 @@ async def main() -> None:
     archivers = []
     for t in tenants:
         g = str(t["group"])
-        chat = await client.get_entity(int(g) if g.lstrip("-").isdigit() else g)
+        chat = await resolve_chat(client, g)
         prof = PROFILES[t["profile"]]
         a = Archiver(cfg, client, chat, Drive(creds, t["drive_root"]), Log(creds, t["sheet_id"], t.get("sheet_tab", "Log")),
                      Classifier(cfg.classifier_key, cfg.classifier_model, cfg.classifier_provider, prof), prof, lock)
