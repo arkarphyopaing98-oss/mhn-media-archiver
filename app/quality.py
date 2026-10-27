@@ -27,7 +27,10 @@ def _frames(path: str, n: int = 8) -> list[np.ndarray]:
         cap.set(cv2.CAP_PROP_POS_FRAMES, int((i + 0.5) * total / n))
         ok, f = cap.read()
         if ok:
-            out.append(f)
+            h, w = f.shape[:2]
+            sc = min(1.0, 1280 / max(h, w))  # keep memory low on 4K footage (512 MB instances)
+            out.append(cv2.resize(f, (int(w * sc), int(h * sc))) if sc < 1 else f)
+            del f
     cap.release()
     return out
 
@@ -62,8 +65,32 @@ def _shake(path: str) -> float:
     return float(np.median(moves)) if moves else 0.0
 
 
+def _ffmpeg() -> str:
+    import shutil
+    if shutil.which("ffmpeg"):
+        return "ffmpeg"
+    import imageio_ffmpeg
+    return imageio_ffmpeg.get_ffmpeg_exe()
+
+
+def _probe(path: str) -> tuple[float, int, int]:
+    """duration, width, height (ffprobe if present, else parse ffmpeg -i)."""
+    import shutil
+    if shutil.which("ffprobe"):
+        info = json.loads(subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration:stream=width,height,codec_type",
+                                          "-of", "json", path], capture_output=True, text=True).stdout or "{}")
+        v = next((s for s in info.get("streams", []) if s.get("codec_type") == "video"), {})
+        return float(info.get("format", {}).get("duration", 0) or 0), v.get("width", 0), v.get("height", 0)
+    err = subprocess.run([_ffmpeg(), "-hide_banner", "-i", path], capture_output=True, text=True).stderr
+    d = re.search(r"Duration: (\d+):(\d+):([\d.]+)", err); r = re.search(r"Video:.*?(\d{2,5})x(\d{2,5})", err)
+    dur = int(d.group(1)) * 3600 + int(d.group(2)) * 60 + float(d.group(3)) if d else 0.0
+    rot = re.search(r"rotat\w*\s*[:=]\s*-?(90|270)", err)
+    w, h = (int(r.group(1)), int(r.group(2))) if r else (0, 0)
+    return dur, (h if rot else w), (w if rot else h)
+
+
 def _audio(path: str) -> tuple[float | None, float | None]:
-    r = subprocess.run(["ffmpeg", "-v", "info", "-i", path, "-af", "volumedetect", "-vn", "-f", "null", "-"],
+    r = subprocess.run([_ffmpeg(), "-v", "info", "-i", path, "-af", "volumedetect", "-vn", "-f", "null", "-"],
                        capture_output=True, text=True)
     mean = re.search(r"mean_volume: (-?[\d.]+)", r.stderr)
     peak = re.search(r"max_volume: (-?[\d.]+)", r.stderr)
@@ -71,11 +98,7 @@ def _audio(path: str) -> tuple[float | None, float | None]:
 
 
 def check_video(path: str) -> tuple[str, list[str], dict]:
-    info = json.loads(subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration:stream=width,height,codec_type",
-                                      "-of", "json", path], capture_output=True, text=True).stdout)
-    v = next((s for s in info.get("streams", []) if s.get("codec_type") == "video"), {})
-    dur = float(info.get("format", {}).get("duration", 0))
-    w, h = v.get("width", 0), v.get("height", 0)
+    dur, w, h = _probe(path)
     frames = _frames(path)
     sb = [_sharp_bright(f) for f in frames] or [(0, 0)]
     sharp, bright = float(np.median([s for s, _ in sb])), float(np.median([b for _, b in sb]))
@@ -114,8 +137,16 @@ def check_photo(path: str) -> tuple[str, list[str], dict]:
     return ("reject" if hard else "usable" if soft else "good"), hard + soft, m
 
 
+def is_photo(p: str) -> bool:
+    return p.lower().endswith((".jpg", ".jpeg", ".png", ".heic", ".webp"))
+
+
 if __name__ == "__main__":
     import sys
+    if sys.argv[1] == "--json":  # used by the archiver in a child process (an OOM only kills the child)
+        p = sys.argv[2]
+        print(json.dumps((check_photo if sys.argv[3] == "photo" else check_video)(p)))
+        raise SystemExit
     for p in sys.argv[1:]:
         fn = check_photo if p.lower().endswith((".jpg", ".jpeg", ".png", ".heic", ".webp")) else check_video
         verdict, notes, metrics = fn(p)

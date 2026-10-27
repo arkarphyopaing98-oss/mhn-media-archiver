@@ -13,7 +13,6 @@ from telethon import TelegramClient
 from telethon.tl.custom.message import Message
 
 from .classifier import Classifier, Classification
-from .quality import check_photo, check_video
 from .proxy import PROXY_ROOT, make_proxy
 from .config import Config
 from .google_io import Drive, Log
@@ -36,6 +35,19 @@ def media_kind(m: Message, include_photos: bool = True) -> str | None:
     if m.document and mime.startswith("image/") and include_photos:
         return "photo"
     return None
+
+
+def run_qc(path: str, kind: str) -> tuple[str, list[str]]:
+    """Quality check in a child process with a timeout, so a memory spike can't kill the archiver."""
+    import json, subprocess, sys
+    try:
+        r = subprocess.run([sys.executable, "-m", "app.quality", "--json", path, kind],
+                           capture_output=True, text=True, timeout=300)
+        verdict, notes, _ = json.loads(r.stdout.strip().splitlines()[-1])
+        return verdict, notes
+    except Exception as e:
+        log.warning("QC failed for %s: %s", path, e)
+        return "unchecked", ["QC failed - check by eye"]
 
 
 def slug(text: str) -> str:
@@ -109,12 +121,17 @@ class Archiver:
                             story, duration, size_mb, f"skipped: over {self.cfg.max_file_mb} MB")
             return
 
+        # Crash guard: mark the message first. If the process dies on this file (e.g. out of memory),
+        # the restart sees the id as done and moves on instead of looping on the same file.
+        await asyncio.to_thread(self.sheet.append, [m.id, local_date.strftime("%Y-%m-%d %H:%M"), sender_name, kind,
+                                                    "", "", "", "", "", "", story, "", "", duration or "", size_mb,
+                                                    "processing (if this stays, the file crashed the archiver)"])
+        self.seen.add(m.id)
         ext = (m.file.ext if m.file else "") or (".mp4" if kind == "video" else ".jpg")
         local_path = os.path.join(TMP_DIR, f"{m.id}{ext}")
         try:
             await self.client.download_media(m, file=local_path)
-            qc_fn = check_video if kind == "video" else check_photo
-            qc_verdict, qc_notes, _ = await asyncio.to_thread(qc_fn, local_path)
+            qc_verdict, qc_notes = await asyncio.to_thread(run_qc, local_path, kind)
             thumb = await self.thumbnail(m, kind, local_path)
             c = await self.classifier.classify(story, kind, thumb)
             banned = c.banned or is_banned(story)
@@ -127,17 +144,6 @@ class Archiver:
             uploaded = await asyncio.to_thread(
                 self.drive.upload, local_path, name, mime, folder_id,
                 f"{story}\n\n{c.summary_my}\nFrom {sender_name}, Telegram msg {m.id}")
-            proxy_link = ""
-            if kind == "video" and qc_verdict != "reject" and not banned:
-                proxy = await asyncio.to_thread(make_proxy, local_path)
-                if proxy:
-                    try:
-                        pid = await asyncio.to_thread(self.drive.folder_for, [PROXY_ROOT, *path])
-                        up = await asyncio.to_thread(self.drive.upload, proxy, name.rsplit(".", 1)[0] + "_proxy.mp4",
-                                                     "video/mp4", pid, f"720p proxy of {name}")
-                        proxy_link = up.get("webViewLink", "")
-                    finally:
-                        os.remove(proxy)
             if banned:
                 status, key = "excluded: banned product", "excluded"
             elif qc_verdict == "reject":
@@ -149,8 +155,21 @@ class Archiver:
             self.stats[key] += 1
             await self._log(m, local_date, sender_name, kind, name, uploaded.get("webViewLink", ""),
                             uploaded.get("id", ""), c, pillar_label, story, duration, size_mb, status,
-                            qc_verdict, "; ".join(qc_notes), proxy_link)
+                            qc_verdict, "; ".join(qc_notes))
             log.info("Archived msg %s -> %s (%s)", m.id, "/".join(path), status)
+            if kind == "video" and qc_verdict != "reject" and not banned:
+                proxy = await asyncio.to_thread(make_proxy, local_path)
+                if proxy:
+                    try:
+                        pid = await asyncio.to_thread(self.drive.folder_for, [PROXY_ROOT, *path])
+                        up = await asyncio.to_thread(self.drive.upload, proxy, name.rsplit(".", 1)[0] + "_proxy.mp4",
+                                                     "video/mp4", pid, f"720p proxy of {name}")
+                        await asyncio.to_thread(self.sheet.set_cell, m.id, "T", up.get("webViewLink", ""))
+                    except Exception:
+                        log.exception("Proxy upload failed for msg %s", m.id)
+                    finally:
+                        if os.path.exists(proxy):
+                            os.remove(proxy)
         finally:
             if os.path.exists(local_path):
                 os.remove(local_path)
@@ -160,7 +179,7 @@ class Archiver:
         row = [m.id, local_date.strftime("%Y-%m-%d %H:%M"), sender, kind, name, link, file_id,
                c.material, c.product_type, pillar_label, story, c.summary_my, c.hook_idea,
                duration or "", size_mb, status, "", qc, qc_notes, proxy]
-        await asyncio.to_thread(self.sheet.append, row)
+        await asyncio.to_thread(self.sheet.set_row, m.id, row)
         self.seen.add(m.id)
 
     async def catch_up(self, full_history: bool, limit: int = 0) -> None:

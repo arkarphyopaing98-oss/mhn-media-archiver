@@ -75,6 +75,35 @@ class Log:
                 out.add(int(r[0]))
         return out
 
+    def _row_of(self, msg_id: int) -> int | None:
+        rows = self.svc.spreadsheets().values().get(
+            spreadsheetId=self.sheet_id, range=f"{self.tab}!A:A").execute().get("values", [])
+        for i, r in enumerate(rows, start=1):
+            if r and str(r[0]) == str(msg_id):
+                return i
+        return None
+
+    def set_row(self, msg_id: int, row: list) -> None:
+        """Replace the row for msg_id (append if missing)."""
+        i = self._row_of(msg_id)
+        if i is None:
+            return self.append(row)
+        end = chr(ord("A") + len(row) - 1)
+        self.svc.spreadsheets().values().update(
+            spreadsheetId=self.sheet_id, range=f"{self.tab}!A{i}:{end}{i}", valueInputOption="RAW",
+            body={"values": [row]}).execute()
+
+    def set_cell(self, msg_id: int, col: str, value: str) -> None:
+        """Write one cell in the row whose column A equals msg_id."""
+        rows = self.svc.spreadsheets().values().get(
+            spreadsheetId=self.sheet_id, range=f"{self.tab}!A:A").execute().get("values", [])
+        for i, r in enumerate(rows, start=1):
+            if r and str(r[0]) == str(msg_id):
+                self.svc.spreadsheets().values().update(
+                    spreadsheetId=self.sheet_id, range=f"{self.tab}!{col}{i}", valueInputOption="RAW",
+                    body={"values": [[value]]}).execute()
+                return
+
     def append(self, row: list) -> None:
         self.svc.spreadsheets().values().append(
             spreadsheetId=self.sheet_id, range=f"{self.tab}!A1",
