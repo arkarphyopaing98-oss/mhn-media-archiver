@@ -38,6 +38,11 @@ async def start_health_server(port: int, archiver_ref: dict) -> None:
 
 
 async def main() -> None:
+    import os
+    if not os.environ.get("TG_SESSION"):
+        from app.tg_setup import run_setup_server
+        await run_setup_server(int(os.environ.get("PORT", "10000")))
+        await asyncio.Event().wait()  # stay up for the browser login
     cfg = Config.from_env()
     ref: dict = {}
     await start_health_server(cfg.port, ref)  # Render needs the port open quickly
