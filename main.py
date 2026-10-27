@@ -78,9 +78,8 @@ async def main() -> None:
     ref["a"] = archivers[0]
     ref["all"] = archivers
 
-    async def catch_up_all():
-        for a in archivers:
-            await a.catch_up(cfg.backfill, cfg.backfill_limit)
+    async def catch_up_all():  # run side by side; the shared lock interleaves files from each group
+        await asyncio.gather(*(a.catch_up(cfg.backfill, cfg.backfill_limit) for a in archivers))
     asyncio.create_task(catch_up_all())
     await client.run_until_disconnected()
 
