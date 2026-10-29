@@ -52,6 +52,7 @@ class Classification:
     confidence: float = 0.0
     summary_my: str = ""
     hook_idea: str = ""
+    failed: bool = False  # the AI call itself failed (quota/network), not a low-confidence answer
 
     @property
     def confident(self) -> bool:
@@ -144,4 +145,4 @@ class Classifier:
                         break
         self.model = models[0]
         log.error("Classification failed; filing under _TO SORT")
-        return Classification()
+        return Classification(failed=True)

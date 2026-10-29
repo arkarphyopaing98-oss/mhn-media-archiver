@@ -27,6 +27,7 @@ def _creds(client_id: str, client_secret: str, refresh_token: str) -> Credential
 class Drive:
     def __init__(self, creds: Credentials, root_id: str) -> None:
         self.svc = build("drive", "v3", credentials=creds, cache_discovery=False)
+        self.creds = creds
         self.root_id = root_id
         self._cache: dict[tuple[str, str], str] = {}
 
@@ -59,6 +60,20 @@ class Drive:
         while resp is None:
             _, resp = req.next_chunk()
         return resp
+
+    def thumbnail(self, file_id: str) -> bytes | None:
+        """Drive's own preview image of a file (works for videos without downloading them)."""
+        from google.auth.transport.requests import AuthorizedSession
+        link = self.svc.files().get(fileId=file_id, fields="thumbnailLink").execute().get("thumbnailLink")
+        if not link:
+            return None
+        r = AuthorizedSession(self.creds).get(link.replace("=s220", "=s800"), timeout=60)
+        return r.content if r.ok and r.content else None
+
+    def move_rename(self, file_id: str, new_name: str, new_parent: str) -> dict:
+        cur = self.svc.files().get(fileId=file_id, fields="parents").execute().get("parents", [])
+        return self.svc.files().update(fileId=file_id, body={"name": new_name}, addParents=new_parent,
+                                       removeParents=",".join(cur), fields="id, webViewLink").execute()
 
     def download(self, file_id: str, local_path: str) -> None:
         req = self.svc.files().get_media(fileId=file_id)
@@ -115,6 +130,16 @@ class Log:
                     spreadsheetId=self.sheet_id, range=f"{self.tab}!{col}{i}", valueInputOption="RAW",
                     body={"values": [[value]]}).execute()
                 return
+
+    def set_range(self, msg_id: int, start_col: str, values: list) -> None:
+        """Write values into the row of msg_id starting at start_col (single letters only)."""
+        i = self._row_of(msg_id)
+        if i is None:
+            return
+        end = chr(ord(start_col) + len(values) - 1)
+        self.svc.spreadsheets().values().update(
+            spreadsheetId=self.sheet_id, range=f"{self.tab}!{start_col}{i}:{end}{i}", valueInputOption="RAW",
+            body={"values": [values]}).execute()
 
     def append(self, row: list) -> None:
         self.svc.spreadsheets().values().append(

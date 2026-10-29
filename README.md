@@ -40,7 +40,7 @@ Each good video gets an **edit link** for the TikTok video maker (Claude's Drive
 - bigger → cut into full-quality **HQ parts** under `_HQ PARTS/` by stream copy (no re-encode); column T = part 1, column U = all parts as JSON `[{from, to, id}]`.
 The old 4×-compressed `_PROXY 720p` copies are no longer made. A background job (`HQ_BACKFILL_DAYS`, default 45) adds HQ parts to older big videos, 4 per poll.
 Every `POLL_MINUTES` (default 10) the archiver also re-scans the newest 400 messages, so posts missed by live updates are still archived.
-Classifier: retries 429/503 with backoff; optional `CLASSIFIER_FALLBACK_MODEL`.
+Classifier: retries 429/503 with backoff; optional `CLASSIFIER_FALLBACK_MODEL`. Rows filed under `_TO SORT` because the AI call failed (no summary) are re-classified from Drive's thumbnail, `RECLASSIFY_PER_RUN` (default 15) per poll, newest first; confident results move the file to its proper folder.
 4. Push this folder to a new private GitHub repo (e.g. `xandra-X/mhn-media-archiver`).
 5. Render → New → Blueprint (uses `render.yaml`) → fill the secret env vars. Plan **Starter** (free instances sleep and miss messages).
 6. First deploy runs with `BACKFILL=true` and archives the whole history oldest-first. Watch progress at `https://<service>.onrender.com/status`.

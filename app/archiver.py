@@ -256,6 +256,53 @@ class Archiver:
         self.stats["hq_backfill_left"] = max(0, len(cand) - done)
         return done
 
+    async def reclassify(self, per_run: int) -> int:
+        """Re-run the AI classifier on rows filed under _TO SORT because the AI call failed earlier
+        (no summary written). Confident results move the Drive file into its proper folder and update the row.
+        Stops for this cycle as soon as the AI is still out of quota."""
+        if per_run <= 0:
+            return 0
+        rows = await asyncio.to_thread(self.sheet.rows, "A2:P")
+        todo = []
+        for r in rows:
+            r = r + [""] * (16 - len(r))
+            if r[0].isdigit() and r[6] and r[15].startswith("to sort") and not r[11] and not r[12]:
+                todo.append(r)
+        todo.sort(key=lambda r: r[1], reverse=True)  # newest first: what the video maker needs soonest
+        done = 0
+        for r in todo[:per_run]:
+            msg_id, kind, file_id, old_name, story = int(r[0]), r[3], r[6], r[4], r[10]
+            async with self.lock:
+                try:
+                    thumb = await asyncio.to_thread(self.drive.thumbnail, file_id)
+                    c = await self.classifier.classify(story, kind, thumb)
+                    if c.failed:
+                        log.info("Reclassify paused: AI still unavailable")
+                        break
+                    banned = c.banned or self.profile.is_banned(story)
+                    path = self.profile.folder_path(c.material, c.pillar, c.confident)
+                    pillar_label = c.pillar if path != [TO_SORT] else TO_SORT
+                    ext = os.path.splitext(old_name)[1] or (".mp4" if kind == "video" else ".jpg")
+                    name = f"{old_name[:8]}_{slug(c.material)}_{slug(c.product_type)}_{slug(pillar_label)}_{msg_id}{ext}"
+                    if path != [TO_SORT]:
+                        fid = await asyncio.to_thread(self.drive.folder_for, path)
+                        moved = await asyncio.to_thread(self.drive.move_rename, file_id, name, fid)
+                        link = moved.get("webViewLink", r[5])
+                    else:
+                        name, link = old_name, r[5]
+                    status = "excluded: banned product" if banned else ("to sort" if path == [TO_SORT] else "new")
+                    vals = [name, link, file_id, c.material, c.product_type, pillar_label, story,
+                            c.summary_my or "-", c.hook_idea, r[13], r[14], status]
+                    await asyncio.to_thread(self.sheet.set_range, msg_id, "E", vals)
+                    done += 1
+                except Exception:
+                    log.exception("Reclassify failed for msg %s", msg_id)
+        self.stats["reclassified"] = self.stats.get("reclassified", 0) + done
+        self.stats["reclassify_left"] = max(0, len(todo) - done)
+        if done:
+            log.info("Reclassify: %d rows done (%d left)", done, max(0, len(todo) - done))
+        return done
+
     async def _log(self, m, local_date, sender, kind, name, link, file_id, c: Classification,
                    pillar_label, story, duration, size_mb, status, qc="", qc_notes="", proxy="") -> None:
         row = [m.id, local_date.strftime("%Y-%m-%d %H:%M"), sender, kind, name, link, file_id,

@@ -106,6 +106,7 @@ async def main() -> None:
             for a in archivers:
                 try:
                     await a.poll_recent()
+                    await a.reclassify(int(os.environ.get("RECLASSIFY_PER_RUN", "15")))
                     await a.hq_backfill(hq_days, hq_per)
                 except Exception:
                     log.exception("[%s] poll failed", a.profile.key)
