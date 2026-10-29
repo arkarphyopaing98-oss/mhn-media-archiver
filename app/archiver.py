@@ -250,9 +250,9 @@ class Archiver:
                 or self.profile.folder_path(c.material, c.pillar, c.confident)
             pillar_label = path[1] if path != [TO_SORT] else TO_SORT
             material = path[0] if path != [TO_SORT] else c.material
-            name = (f"{local_date:%Y%m%d}_{slug(material)}_{slug(c.product_type)}_"
+            name = (f"{local_date:%Y%m%d}_{self.profile.key}_{slug(material)}_{slug(c.product_type)}_"
                     f"{slug(pillar_label)}_voice_{m.id}{ext}")
-            folder_id = await asyncio.to_thread(self.drive.folder_for, path)
+            folder_id = self.cfg.voice_folder_id or await asyncio.to_thread(self.drive.folder_for, path)
             mime = (m.file.mime_type if m.file else None) or "audio/ogg"
             note = f"Voice note for video msg {linked}" if linked else "Standalone voice note"
             uploaded = await asyncio.to_thread(
@@ -410,9 +410,15 @@ class Archiver:
                     pillar_label = c.pillar if path != [TO_SORT] else TO_SORT
                     ext = os.path.splitext(old_name)[1] or {"video": ".mp4", "voice": ".ogg"}.get(kind, ".jpg")
                     tag = "voice_" if kind == "voice" else ""
-                    name = (f"{old_name[:8]}_{slug(c.material)}_{slug(c.product_type)}_{slug(pillar_label)}_"
+                    pre = f"{self.profile.key}_" if kind == "voice" else ""
+                    name = (f"{old_name[:8]}_{pre}{slug(c.material)}_{slug(c.product_type)}_{slug(pillar_label)}_"
                             f"{tag}{msg_id}{ext}")
-                    if path != [TO_SORT]:
+                    if kind == "voice" and self.cfg.voice_folder_id:  # voice notes stay in the one voice folder
+                        if path == [TO_SORT]:
+                            name = old_name
+                        moved = await asyncio.to_thread(self.drive.move_rename, file_id, name, self.cfg.voice_folder_id)
+                        link = moved.get("webViewLink", r[5])
+                    elif path != [TO_SORT]:
                         fid = await asyncio.to_thread(self.drive.folder_for, path)
                         moved = await asyncio.to_thread(self.drive.move_rename, file_id, name, fid)
                         link = moved.get("webViewLink", r[5])

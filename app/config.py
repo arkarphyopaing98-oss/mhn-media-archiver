@@ -55,6 +55,7 @@ class Config:
     port: int = 10000
     include_photos: bool = True
     include_voice: bool = True         # archive + transcribe voice notes / audio files
+    voice_folder_id: str = ""          # all voice notes go into this one Drive folder ("" = next to their video)
     timezone: str = "Asia/Yangon"
     extra: dict = field(default_factory=dict)
 
@@ -83,5 +84,6 @@ class Config:
             port=_int("PORT", 10000),
             include_photos=os.environ.get("INCLUDE_PHOTOS", "true").lower() in {"1", "true", "yes"},
             include_voice=os.environ.get("INCLUDE_VOICE", "true").lower() in {"1", "true", "yes"},
+            voice_folder_id=os.environ.get("VOICE_FOLDER_ID", "1yB3tMS7Y8AXBOphYVzCGMY18MlZltWTy").strip(),
             timezone=os.environ.get("TZ_NAME", "Asia/Yangon"),
         )

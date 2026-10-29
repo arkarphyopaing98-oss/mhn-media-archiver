@@ -72,8 +72,11 @@ class Drive:
 
     def move_rename(self, file_id: str, new_name: str, new_parent: str) -> dict:
         cur = self.svc.files().get(fileId=file_id, fields="parents").execute().get("parents", [])
-        return self.svc.files().update(fileId=file_id, body={"name": new_name}, addParents=new_parent,
-                                       removeParents=",".join(cur), fields="id, webViewLink").execute()
+        kw = {}
+        if new_parent not in cur:  # already there (e.g. the voice folder) -> rename only
+            kw = {"addParents": new_parent, "removeParents": ",".join(cur)}
+        return self.svc.files().update(fileId=file_id, body={"name": new_name}, fields="id, webViewLink",
+                                       **kw).execute()
 
     def download(self, file_id: str, local_path: str) -> None:
         req = self.svc.files().get_media(fileId=file_id)

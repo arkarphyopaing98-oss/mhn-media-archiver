@@ -30,7 +30,8 @@ New videos wait 10 minutes (`STORY_WAIT_SECONDS`) before processing so the team 
 Voice notes / audio files in the group are archived too (`INCLUDE_VOICE=true`, default):
 - **Transcribed** — ElevenLabs Scribe if `ELEVENLABS_API_KEY` is set (best Burmese), else Gemini (`TRANSCRIBE_MODEL`, default `gemini-flash-latest`).
 - **Linked to a video:** the video it replies to → else the same person's last video within 15 min before it → else their next video within 5 min.
-- **Saved** as the original `.ogg` in the **same Drive folder as that video** (`..._voice_<msgid>.ogg`); standalone notes are classified from the transcript.
+- **Saved** as the original `.ogg` in **one voice folder** for all groups (`VOICE_FOLDER_ID`, default the Drive "Phone Call" folder), named `<date>_<mhn|rm>_<material>_<product>_<pillar>_voice_<msgid>.ogg`. Set `VOICE_FOLDER_ID=` (empty) to file them next to their video instead.
+- No extra API key needed: transcription uses the existing `GEMINI_API_KEY` (ElevenLabs only if `ELEVENLABS_API_KEY` is added).
 - **Sheet:** kind `voice`, transcript in the story column (K), linked video msg id in column **V**.
 - The transcript is also added to the linked **video's story** (marked 🎙️), so the video is classified better.
 - Transcription failed → row stays `to sort` and is re-transcribed by the reclassify job.
