@@ -98,7 +98,19 @@ async def main() -> None:
 
     async def catch_up_all():  # run side by side; the shared lock interleaves files from each group
         await asyncio.gather(*(a.catch_up(cfg.backfill, cfg.backfill_limit) for a in archivers))
-    asyncio.create_task(catch_up_all())
+    async def catch_up_then_poll():
+        await catch_up_all()
+        every = int(os.environ.get("POLL_MINUTES", "10")) * 60
+        hq_days, hq_per = int(os.environ.get("HQ_BACKFILL_DAYS", "45")), int(os.environ.get("HQ_BACKFILL_PER_RUN", "4"))
+        while True:  # safety net: Telegram live updates can be missed (reconnects, big groups)
+            for a in archivers:
+                try:
+                    await a.poll_recent()
+                    await a.hq_backfill(hq_days, hq_per)
+                except Exception:
+                    log.exception("[%s] poll failed", a.profile.key)
+            await asyncio.sleep(every)
+    asyncio.create_task(catch_up_then_poll())
     await client.run_until_disconnected()
 
 

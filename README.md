@@ -35,7 +35,12 @@ New videos wait 10 minutes (`STORY_WAIT_SECONDS`) before processing so the team 
    Publish the OAuth app (Testing mode tokens expire after 7 days).
 3. **AI classifier:** `GEMINI_API_KEY` (Google AI Studio, free tier) — or `ANTHROPIC_API_KEY` for Claude.
 
-Each good video also gets a small 720p proxy copy under `_PROXY 720p/` (for Claude to edit from).
+Each good video gets an **edit link** for the TikTok video maker (Claude's Drive connector only downloads files < 10 MB):
+- original under 9.3 MB → Log column T = the original itself.
+- bigger → cut into full-quality **HQ parts** under `_HQ PARTS/` by stream copy (no re-encode); column T = part 1, column U = all parts as JSON `[{from, to, id}]`.
+The old 4×-compressed `_PROXY 720p` copies are no longer made. A background job (`HQ_BACKFILL_DAYS`, default 45) adds HQ parts to older big videos, 4 per poll.
+Every `POLL_MINUTES` (default 10) the archiver also re-scans the newest 400 messages, so posts missed by live updates are still archived.
+Classifier: retries 429/503 with backoff; optional `CLASSIFIER_FALLBACK_MODEL`.
 4. Push this folder to a new private GitHub repo (e.g. `xandra-X/mhn-media-archiver`).
 5. Render → New → Blueprint (uses `render.yaml`) → fill the secret env vars. Plan **Starter** (free instances sleep and miss messages).
 6. First deploy runs with `BACKFILL=true` and archives the whole history oldest-first. Watch progress at `https://<service>.onrender.com/status`.

@@ -10,7 +10,7 @@ from typing import Iterable
 
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
-from googleapiclient.http import MediaFileUpload
+from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload
 
 log = logging.getLogger(__name__)
 SCOPES = ["https://www.googleapis.com/auth/drive", "https://www.googleapis.com/auth/spreadsheets"]
@@ -60,6 +60,14 @@ class Drive:
             _, resp = req.next_chunk()
         return resp
 
+    def download(self, file_id: str, local_path: str) -> None:
+        req = self.svc.files().get_media(fileId=file_id)
+        with open(local_path, "wb") as fh:
+            dl = MediaIoBaseDownload(fh, req, chunksize=16 * 1024 * 1024)
+            done = False
+            while not done:
+                _, done = dl.next_chunk()
+
 
 class Log:
     def __init__(self, creds: Credentials, sheet_id: str, tab: str) -> None:
@@ -74,6 +82,10 @@ class Log:
             if r and str(r[0]).lstrip("-").isdigit():
                 out.add(int(r[0]))
         return out
+
+    def rows(self, a1: str) -> list[list[str]]:
+        return self.svc.spreadsheets().values().get(
+            spreadsheetId=self.sheet_id, range=f"{self.tab}!{a1}").execute().get("values", [])
 
     def _row_of(self, msg_id: int) -> int | None:
         rows = self.svc.spreadsheets().values().get(

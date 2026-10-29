@@ -124,9 +124,24 @@ class Classifier:
         return "".join(p.get("text", "") for p in d["candidates"][0]["content"]["parts"])
 
     async def classify(self, story: str, media_type: str, thumb_jpeg: bytes | None) -> Classification:
-        try:
-            fn = self._gemini if self.provider == "gemini" else self._anthropic
-            return parse_reply(await fn(story, media_type, thumb_jpeg), self.profile)
-        except Exception:  # network/API issues must never stop archiving
-            log.exception("Classification failed; filing under _TO SORT")
-            return Classification()
+        """Retries rate limits / overload (429, 500, 503) with backoff, then a fallback model
+        (CLASSIFIER_FALLBACK_MODEL), before giving up and filing under _TO SORT."""
+        import asyncio, os
+        fn = self._gemini if self.provider == "gemini" else self._anthropic
+        models = [self.model] + [m for m in os.environ.get("CLASSIFIER_FALLBACK_MODEL", "").split(",") if m.strip()]
+        for model in models:
+            self.model = model.strip()
+            for wait in (0, 20, 60):
+                if wait:
+                    await asyncio.sleep(wait)
+                try:
+                    return parse_reply(await fn(story, media_type, thumb_jpeg), self.profile)
+                except Exception as e:  # network/API issues must never stop archiving
+                    retry = any(code in str(e) for code in ("429", "500", "503", "overloaded", "RESOURCE_EXHAUSTED"))
+                    log.warning("Classification attempt failed (%s, %s): %s", self.model, "retry" if retry else "give up",
+                                str(e)[:160])
+                    if not retry:
+                        break
+        self.model = models[0]
+        log.error("Classification failed; filing under _TO SORT")
+        return Classification()
