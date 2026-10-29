@@ -36,6 +36,7 @@ class Config:
     anthropic_api_key: str = ""
     classifier_model: str = "claude-haiku-4-5"
     gemini_api_key: str = ""
+    elevenlabs_api_key: str = ""   # optional: best Burmese speech-to-text for voice notes
 
     @property
     def classifier_provider(self) -> str:
@@ -53,6 +54,7 @@ class Config:
     backfill_limit: int = 0            # 0 = whole history
     port: int = 10000
     include_photos: bool = True
+    include_voice: bool = True         # archive + transcribe voice notes / audio files
     timezone: str = "Asia/Yangon"
     extra: dict = field(default_factory=dict)
 
@@ -71,6 +73,7 @@ class Config:
             sheet_tab=os.environ.get("SHEET_TAB", "Log"),
             anthropic_api_key=os.environ.get("ANTHROPIC_API_KEY", ""),
             gemini_api_key=os.environ.get("GEMINI_API_KEY", ""),
+            elevenlabs_api_key=os.environ.get("ELEVENLABS_API_KEY", ""),
             classifier_model=os.environ.get("CLASSIFIER_MODEL") or ("claude-haiku-4-5" if os.environ.get("ANTHROPIC_API_KEY") else "gemini-flash-lite-latest"),
             story_wait_seconds=_int("STORY_WAIT_SECONDS", 600),
             story_window_minutes=_int("STORY_WINDOW_MINUTES", 15),
@@ -79,5 +82,6 @@ class Config:
             backfill_limit=_int("BACKFILL_LIMIT", 0),
             port=_int("PORT", 10000),
             include_photos=os.environ.get("INCLUDE_PHOTOS", "true").lower() in {"1", "true", "yes"},
+            include_voice=os.environ.get("INCLUDE_VOICE", "true").lower() in {"1", "true", "yes"},
             timezone=os.environ.get("TZ_NAME", "Asia/Yangon"),
         )

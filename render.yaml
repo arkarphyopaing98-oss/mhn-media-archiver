@@ -30,6 +30,8 @@ services:
         value: 1bmgnMhhV5SOox8Nt-rFPjtJ674Ttuc1q9PrkH-buQho
       - key: GEMINI_API_KEY        # or ANTHROPIC_API_KEY instead
         sync: false
+      - key: ELEVENLABS_API_KEY    # optional: Burmese speech-to-text for voice notes (Gemini used if empty)
+        sync: false
       - key: CLASSIFIER_MODEL
         value: gemini-flash-lite-latest
       - key: BACKFILL

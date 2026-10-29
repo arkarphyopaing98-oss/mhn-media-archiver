@@ -53,3 +53,45 @@ def test_parse_reply_and_folders():
 def test_banned():
     assert is_banned("This is a Folding Door install")
     assert not is_banned("uPVC slide door")
+
+
+# --- voice notes -----------------------------------------------------------
+from types import SimpleNamespace
+
+from app.story import link_target
+
+
+def test_voice_after_video_links_back_and_joins_story():
+    v = m(10, 0, media=True)
+    voice = m(11, 2, text="🎙️ ဒါ UPVC slide door ပါ")  # voice = text for pairing (has_media False)
+    nb = [v, voice, m(12, 4, media=True)]
+    assert link_target(voice, nb) == 10
+    assert build_story(v, nb) == "🎙️ ဒါ UPVC slide door ပါ"
+
+
+def test_voice_reply_wins_and_standalone_is_none():
+    a, b = m(10, 0, media=True), m(11, 1, media=True)
+    voice = m(12, 3, sender=2, reply=10)
+    assert link_target(voice, [a, b, voice]) == 10
+    lone = m(30, 0, sender=5)
+    assert link_target(lone, [m(1, -60, sender=5, media=True), lone]) is None
+
+
+def test_voice_before_video_links_forward():
+    voice, v = m(10, 0), m(11, 2, media=True)
+    assert link_target(voice, [voice, v]) == 11
+
+
+def _tg(**kw):
+    base = dict(voice=None, audio=None, document=None, video=None, video_note=None, gif=None, photo=None, file=None)
+    base.update(kw)
+    return SimpleNamespace(**base)
+
+
+def test_media_kind_voice():
+    from app.archiver import media_kind
+    ogg = SimpleNamespace(mime_type="audio/ogg")
+    assert media_kind(_tg(voice=True, document=True, file=ogg)) == "voice"
+    assert media_kind(_tg(document=True, file=SimpleNamespace(mime_type="audio/mpeg"))) == "voice"
+    assert media_kind(_tg(voice=True, file=ogg), include_voice=False) is None
+    assert media_kind(_tg(video=True, file=SimpleNamespace(mime_type="video/mp4"))) == "video"

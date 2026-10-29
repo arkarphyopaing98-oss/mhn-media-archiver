@@ -68,3 +68,32 @@ def build_story(target: Msg, neighbours: Iterable[Msg], window_minutes: int = 15
             add(m.text)
 
     return "\n".join(parts)
+
+
+def link_target(voice: Msg, neighbours: Iterable[Msg], window_minutes: int = 15) -> Optional[int]:
+    """Which video/photo a voice note talks about (same idea as the story rules, in reverse):
+    1. The media it replies to.
+    2. The same sender's latest media before it, within the window (voice sent after the video = its story).
+    3. The same sender's next media within 5 minutes (voice sent first, video right after).
+    None = a standalone voice note."""
+    nb = sorted((m for m in neighbours if m.id != voice.id), key=lambda m: m.id)
+    by_id = {m.id: m for m in nb}
+    if voice.reply_to in by_id and by_id[voice.reply_to].has_media:
+        return voice.reply_to
+    start = voice.date - timedelta(minutes=window_minutes)
+    for m in reversed(nb):
+        if m.id >= voice.id or m.sender_id != voice.sender_id:
+            continue
+        if m.date < start:
+            break
+        if m.has_media:
+            return m.id
+    end = voice.date + timedelta(minutes=5)
+    for m in nb:
+        if m.id <= voice.id or m.sender_id != voice.sender_id:
+            continue
+        if m.date > end:
+            break
+        if m.has_media:
+            return m.id
+    return None

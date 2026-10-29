@@ -25,6 +25,16 @@ File name: `20261027_upvc_slide-door_installation_4821.mp4` (date, material, pro
 5. If none: their text up to 5 min before it.
 New videos wait 10 minutes (`STORY_WAIT_SECONDS`) before processing so the team can finish typing.
 
+## Voice notes 🎙️
+
+Voice notes / audio files in the group are archived too (`INCLUDE_VOICE=true`, default):
+- **Transcribed** — ElevenLabs Scribe if `ELEVENLABS_API_KEY` is set (best Burmese), else Gemini (`TRANSCRIBE_MODEL`, default `gemini-flash-latest`).
+- **Linked to a video:** the video it replies to → else the same person's last video within 15 min before it → else their next video within 5 min.
+- **Saved** as the original `.ogg` in the **same Drive folder as that video** (`..._voice_<msgid>.ogg`); standalone notes are classified from the transcript.
+- **Sheet:** kind `voice`, transcript in the story column (K), linked video msg id in column **V**.
+- The transcript is also added to the linked **video's story** (marked 🎙️), so the video is classified better.
+- Transcription failed → row stays `to sort` and is re-transcribed by the reclassify job.
+
 **Team rule:** send the video, then type the story (where, which product, what's happening, customer name if they agree).
 
 ## Setup (one time, ~30 min)
