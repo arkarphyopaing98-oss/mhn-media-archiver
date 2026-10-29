@@ -1,8 +1,17 @@
 """Central configuration, read once from environment variables."""
 from __future__ import annotations
 
+import json
 import os
 from dataclasses import dataclass, field
+
+
+# Each business keeps its own voice-note folder ("Phone Call" folders in Drive).
+# Override with VOICE_FOLDERS='{"mhn":"<id>","rm":"<id>"}' (an empty id = next to the video).
+DEFAULT_VOICE_FOLDERS = {
+    "mhn": "1yB3tMS7Y8AXBOphYVzCGMY18MlZltWTy",
+    "rm": "1grPN4q9z7er5pp2wYJGlHd8VIAzXfO8l",
+}
 
 
 def _req(name: str) -> str:
@@ -55,7 +64,11 @@ class Config:
     port: int = 10000
     include_photos: bool = True
     include_voice: bool = True         # archive + transcribe voice notes / audio files
-    voice_folder_id: str = ""          # all voice notes go into this one Drive folder ("" = next to their video)
+    voice_folders: dict = field(default_factory=lambda: dict(DEFAULT_VOICE_FOLDERS))  # profile key -> Drive folder for its voice notes
+
+    def voice_folder(self, profile_key: str) -> str:
+        """"" = file the voice note next to its video instead."""
+        return (self.voice_folders.get(profile_key) or "").strip()
     timezone: str = "Asia/Yangon"
     extra: dict = field(default_factory=dict)
 
@@ -84,6 +97,6 @@ class Config:
             port=_int("PORT", 10000),
             include_photos=os.environ.get("INCLUDE_PHOTOS", "true").lower() in {"1", "true", "yes"},
             include_voice=os.environ.get("INCLUDE_VOICE", "true").lower() in {"1", "true", "yes"},
-            voice_folder_id=os.environ.get("VOICE_FOLDER_ID", "1yB3tMS7Y8AXBOphYVzCGMY18MlZltWTy").strip(),
+            voice_folders={**DEFAULT_VOICE_FOLDERS, **json.loads(os.environ.get("VOICE_FOLDERS", "{}") or "{}")},
             timezone=os.environ.get("TZ_NAME", "Asia/Yangon"),
         )
