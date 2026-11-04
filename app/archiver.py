@@ -341,6 +341,7 @@ class Archiver:
                     and (r[15].startswith("new") or r[15].startswith("to sort")) and r[17] != "reject":
                 cand.append(r)
         cand.sort(key=lambda r: r[1], reverse=True)
+        max_mb = float(os.environ.get("HQ_MAX_MB", "200"))
         done = 0
         for r in cand[:per_run]:
             msg_id, file_id, name = int(r[0]), r[6], r[4]
@@ -352,7 +353,12 @@ class Archiver:
                         await asyncio.to_thread(self.sheet.set_cell, msg_id, "T", r[5])
                         await asyncio.to_thread(self.sheet.set_cell, msg_id, "U", json.dumps(
                             [{"from": 0, "to": None, "id": file_id, "original": True}]))
+                    elif float(r[14]) > max_mb:  # 2026-11-04: huge files OOM-killed the 512 MB instance in a loop
+                        await asyncio.to_thread(self.sheet.set_cell, msg_id, "U", f"hq: skipped, over {max_mb:.0f} MB")
                     else:
+                        # Crash guard: mark the attempt first, so an out-of-memory kill doesn't retry this file forever.
+                        await asyncio.to_thread(self.sheet.set_cell, msg_id, "U",
+                                                f"hq: attempted {time.strftime('%Y-%m-%d %H:%M UTC', time.gmtime())}")
                         await asyncio.to_thread(self.drive.download, file_id, local)
                         await self._hq_parts(msg_id, local, name, path, {"id": file_id, "webViewLink": r[5]})
                     done += 1
@@ -413,6 +419,8 @@ class Archiver:
                                 [{"from": 0, "to": None, "id": fid, "original": True}]))
                         elif size_mb <= max_mb:
                             local = os.path.join(TMP_DIR, f"drv_{fid}{os.path.splitext(f.get('name', ''))[1] or '.mp4'}")
+                            await asyncio.to_thread(self.sheet.set_cell, mid, "U",  # crash guard (see hq_backfill)
+                                                    f"hq: attempted {time.strftime('%Y-%m-%d %H:%M UTC', time.gmtime())}")
                             try:
                                 await asyncio.to_thread(self.drive.download, fid, local)
                                 hq_path = [p for p in (material, pillar) if p] or ["_TO SORT"]

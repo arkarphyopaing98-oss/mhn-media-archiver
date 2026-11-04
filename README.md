@@ -46,7 +46,7 @@ TikTok video maker can use them. Once an hour (`DRIVE_IMPORT_EVERY_MINUTES`, def
 (default 8) new files per poll until all are in:
 - column A = a stable **negative** id from the Drive file id, sender = `Drive upload`, posted_at = capture/modified date;
 - material + pillar from the folder name when it is a taxonomy folder (e.g. `UPVC/INSTALLATION`), else the AI classifier;
-- videos ≤ 9.3 MB → column T = the original; bigger (≤ `DRIVE_IMPORT_MAX_MB`, default 400) → HQ parts; bigger still → note in column S;
+- videos ≤ 9.3 MB → column T = the original; bigger (≤ `DRIVE_IMPORT_MAX_MB`, default 200) → HQ parts; bigger still → note in column S;
 - the owner's files are **never moved or renamed**. `DRIVE_IMPORT=false` turns it off. Progress: `/status` → `drive_imported`, `drive_import_left`.
 
 ## Setup (one time, ~30 min)

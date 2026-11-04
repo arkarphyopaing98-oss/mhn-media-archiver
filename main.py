@@ -110,7 +110,7 @@ async def main() -> None:
                     await a.hq_backfill(hq_days, hq_per)
                     if os.environ.get("DRIVE_IMPORT", "true").lower() in {"1", "true", "yes"}:
                         await a.drive_import(int(os.environ.get("DRIVE_IMPORT_PER_RUN", "8")),
-                                             float(os.environ.get("DRIVE_IMPORT_MAX_MB", "400")),
+                                             float(os.environ.get("DRIVE_IMPORT_MAX_MB", "200")),
                                              int(os.environ.get("DRIVE_IMPORT_EVERY_MINUTES", "60")))
                 except Exception:
                     log.exception("[%s] poll failed", a.profile.key)
