@@ -38,6 +38,15 @@ Voice notes / audio files in the group are archived too (`INCLUDE_VOICE=true`, d
 
 **Team rule:** send the video, then type the story (where, which product, what's happening, customer name if they agree).
 
+## Pick tab 🎯 (owner 2026-11-04: "footage ထပ်နေတယ်")
+Every hour the archiver rewrites a **Pick** tab in the Log spreadsheet = the footage shortlist the TikTok video maker must use.
+- **Job** = sender | posted date | material | product_type (one visit/job). Max **1 post per job per day**; a job **rests 7 days** after any of its clips is used.
+- A clip **rests 14 days** after use (Log column Q `used_on`).
+- **50/50 mix**: `new` jobs (last 7 days, newest first) alternate with `archive` jobs (never used first, then least recently used).
+- Skips duplicate/excluded/processing rows, qc=reject, rows without a usable file, and the same video forwarded twice.
+- Same `rank` = same job. The video maker writes Q `used_on` the moment it picks a clip, so the next run skips it.
+- Env: `PICK_TAB` (default Pick), `PICK_EVERY_MINUTES` (60). `/status` shows `pick_rows`, `pick_jobs`, `pick_updated`.
+
 ## Drive uploads 📁 (owner 2026-11-04)
 
 Photos/videos dropped **straight into the Drive root** (`TIKTOK RAW/…`, any sub-folder) also get a Log row, so the

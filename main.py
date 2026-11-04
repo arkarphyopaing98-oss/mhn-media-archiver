@@ -114,6 +114,11 @@ async def main() -> None:
                                              int(os.environ.get("DRIVE_IMPORT_EVERY_MINUTES", "60")))
                 except Exception:
                     log.exception("[%s] poll failed", a.profile.key)
+                try:  # footage shortlist for the video maker (own try: must not depend on the steps above)
+                    await a.build_pick(os.environ.get("PICK_TAB", "Pick"),
+                                       int(os.environ.get("PICK_EVERY_MINUTES", "60")))
+                except Exception:
+                    log.exception("[%s] pick tab failed", a.profile.key)
             await asyncio.sleep(every)
     asyncio.create_task(catch_up_then_poll())
     await client.run_until_disconnected()

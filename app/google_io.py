@@ -171,6 +171,19 @@ class Log:
             spreadsheetId=self.sheet_id, range=f"{self.tab}!{start_col}{i}:{end}{i}", valueInputOption="RAW",
             body={"values": [values]}).execute()
 
+    def write_tab(self, tab: str, values: list[list]) -> None:
+        """Replace the whole content of another tab in this spreadsheet (created if missing)."""
+        ss = self.svc.spreadsheets()
+        titles = [s["properties"]["title"] for s in
+                  ss.get(spreadsheetId=self.sheet_id, fields="sheets.properties.title").execute().get("sheets", [])]
+        if tab not in titles:
+            ss.batchUpdate(spreadsheetId=self.sheet_id,
+                           body={"requests": [{"addSheet": {"properties": {"title": tab}}}]}).execute()
+        ss.values().clear(spreadsheetId=self.sheet_id, range=f"{tab}!A:Z", body={}).execute()
+        if values:
+            ss.values().update(spreadsheetId=self.sheet_id, range=f"{tab}!A1", valueInputOption="RAW",
+                               body={"values": values}).execute()
+
     def append(self, row: list) -> None:
         self.svc.spreadsheets().values().append(
             spreadsheetId=self.sheet_id, range=f"{self.tab}!A1",

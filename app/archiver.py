@@ -442,6 +442,22 @@ class Archiver:
         self.stats["drive_import_left"] = max(0, len(todo) - done)
         return done
 
+    async def build_pick(self, tab: str = "Pick", every_minutes: int = 60) -> int:
+        """Rewrite the Pick tab (footage shortlist for the video maker, see app/pick.py)."""
+        from datetime import datetime
+        from .pick import HEADER, build
+        now = time.time()
+        if now - self.stats.get("_pick_at", 0) < every_minutes * 60:
+            return 0
+        self.stats["_pick_at"] = now
+        rows = await asyncio.to_thread(self.sheet.rows, "A2:V")
+        out = build(rows, datetime.now(self.tz).date())
+        await asyncio.to_thread(self.sheet.write_tab, tab, [HEADER] + out)
+        self.stats["pick_rows"] = len(out)
+        self.stats["pick_jobs"] = len({r[2] for r in out})
+        self.stats["pick_updated"] = time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime())
+        return len(out)
+
     async def reclassify(self, per_run: int) -> int:
         """Re-run the AI classifier on rows filed under _TO SORT because the AI call failed earlier
         (no summary written). Confident results move the Drive file into its proper folder and update the row.

@@ -132,3 +132,58 @@ def test_folder_guess_and_posted_at():
     assert folder_guess(("random",), p) == ("", "")
     assert posted_at({"imageMediaMetadata": {"time": "2025:12:26 10:17:01"}}, "Asia/Yangon") == "2025-12-26 10:17"
     assert posted_at({"modifiedTime": "2026-09-28T07:59:25.516Z"}, "Asia/Yangon") == "2026-09-28 14:29"
+
+
+# --- Pick tab (owner 2026-11-04: footage must not repeat) ---
+from datetime import date
+from app.pick import build, job_id, usable
+
+
+def _row(mid, posted, sender="Ko Aung", kind="video", mat="UPVC", prod="Window", used="", status="new", qc="good",
+         size="5.0", dur="20", edit="https://e"):
+    r = [""] * 21
+    r[0], r[1], r[2], r[3], r[6], r[7], r[8], r[9] = str(mid), posted, sender, kind, f"f{mid}", mat, prod, "INSTALLATION"
+    r[13], r[14], r[15], r[16], r[17], r[19] = dur, size, status, used, qc, edit
+    return r
+
+
+def test_pick_skips_bad_rows():
+    assert usable(_row(1, "2026-11-01 10:00"))
+    assert not usable(_row(2, "2026-11-01 10:00", status="duplicate: stale crash-guard row"))
+    assert not usable(_row(3, "2026-11-01 10:00", qc="reject"))
+    assert not usable(_row(4, "2026-11-01 10:00", size="40", edit=""))
+    assert usable(_row(-5, "2026-11-01 10:00", size="4", edit=""))  # Drive upload, small original
+
+
+def test_pick_job_rest_clip_rest_and_dedupe():
+    today = date(2026, 11, 4)
+    rows = [
+        _row(10, "2026-11-03 09:00", size="5.1", dur="21"),  # job A
+        _row(11, "2026-11-03 09:05", size="6.0", dur="30", used="2026-11-02"),  # job A used 2 days ago -> whole job rests
+        _row(20, "2026-11-02 09:00", sender="Ko Min", size="5.1", dur="21"),  # job B, same size+dur as 10 but 10 skipped
+        _row(21, "2026-11-02 09:00", sender="Ko Min", size="5.1", dur="21"),  # identical copy of 20 -> dropped
+        _row(30, "2026-09-01 09:00", sender="Old", used="2026-10-01", size="7.0"),  # archive, clip rest over (>14d)
+        _row(31, "2026-08-01 09:00", sender="Older", size="8.0"),  # archive, never used
+    ]
+    out = build(rows, today)
+    ids = [r[3] for r in out]
+    assert "10" not in ids and "11" not in ids and "21" not in ids
+    assert ids == ["20", "31", "30"]  # new, archive(never used), archive(least recent)
+    assert [r[1] for r in out] == ["new", "archive", "archive"]
+    assert [r[0] for r in out] == [1, 2, 3]
+
+
+def test_pick_alternates_new_and_archive_and_groups_jobs():
+    today = date(2026, 11, 4)
+    rows = [_row(i, p, sender=s, dur=d, size=f"{i}.5") for i, p, s, d in [
+        (1, "2026-11-03 10:00", "A", "20"), (2, "2026-11-03 10:02", "A", "40"),  # same job, 2 clips
+        (3, "2026-11-02 10:00", "B", "20"), (4, "2026-11-01 10:00", "C", "20"),
+        (5, "2026-06-01 10:00", "D", "20"), (6, "2026-05-01 10:00", "E", "20")]]
+    rows.append(_row(7, "2026-05-01 10:00", sender="E", kind="photo", size="0.2", dur=""))
+    rows.append(_row(8, "2026-05-01 11:00", sender="F", kind="photo", size="0.2", dur=""))  # photos never deduped
+    out = build(rows, today)
+    assert [(r[0], r[1]) for r in out][:3] == [(1, "new"), (1, "new"), (2, "archive")]
+    assert out[0][3] == "2"  # longest clip of the job first
+    assert [r[1] for r in out if r[0] in (3, 4)] == ["new", "archive"]
+    assert job_id(rows[0]) == job_id(rows[1])
+    assert {"7", "8"} <= {r[3] for r in out}
