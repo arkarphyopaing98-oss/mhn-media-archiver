@@ -366,6 +366,74 @@ class Archiver:
         self.stats["hq_backfill_left"] = max(0, len(cand) - done)
         return done
 
+    async def drive_import(self, per_run: int, max_mb: float, every_minutes: int = 60) -> int:
+        """Log rows for photos/videos dropped straight into the Drive root (see app/drive_import.py)."""
+        from .drive_import import SKIP_FOLDERS, SENDER, candidates, folder_guess, import_id, kind_of, posted_at
+        if per_run <= 0:
+            return 0
+        now = time.time()
+        if now - self.stats.get("_drive_scan_at", 0) < every_minutes * 60 and not self.stats.get("drive_import_left"):
+            return 0
+        self.stats["_drive_scan_at"] = now
+        skip_ids = {self.cfg.voice_folder(self.profile.key)} - {""}
+        files = await asyncio.to_thread(self.drive.walk, self.drive.root_id, SKIP_FOLDERS, skip_ids)
+        rows = await asyncio.to_thread(self.sheet.rows, "A2:G")
+        known = {r[6] for r in rows if len(r) > 6 and r[6]}
+        todo = candidates(files, known)
+        done = 0
+        for f, path in todo[:per_run]:
+            kind, fid = kind_of(f), f["id"]
+            mid = import_id(fid)
+            size_mb = round(int(f.get("size") or 0) / 1_048_576, 1)
+            dur = round(int((f.get("videoMediaMetadata") or {}).get("durationMillis") or 0) / 1000, 1) or ""
+            story = f"(Drive upload) {f.get('name', '')} · folder: {'/'.join(path) or 'TIKTOK RAW'}"
+            if f.get("description"):
+                story += f"\n{f['description'][:500]}"
+            async with self.lock:
+                try:
+                    mat, pil = folder_guess(path, self.profile)
+                    thumb = await asyncio.to_thread(self.drive.thumbnail, fid)
+                    c = await self.classifier.classify(story, kind, thumb)
+                    material = mat or (c.material if c.confident else "")
+                    pillar = pil or (c.pillar if c.confident else "")
+                    banned = c.banned or self.profile.is_banned(story)
+                    status = ("excluded: banned product" if banned else
+                              "new" if material and pillar else "to sort")
+                    note = "added from Drive folder (not via Telegram)"
+                    row = [mid, posted_at(f, self.cfg.timezone), SENDER, kind, f.get("name", ""),
+                           f.get("webViewLink", ""), fid, material or c.material, c.product_type,
+                           pillar or "_TO SORT", story, c.summary_my, c.hook_idea, dur, size_mb, status, "",
+                           "unchecked", note]
+                    await asyncio.to_thread(self.sheet.set_row, mid, row)
+                    self.seen.add(mid)
+                    if kind == "video" and not banned:
+                        if size_mb <= LIMIT_MB:
+                            await asyncio.to_thread(self.sheet.set_cell, mid, "T", f.get("webViewLink", ""))
+                            await asyncio.to_thread(self.sheet.set_cell, mid, "U", json.dumps(
+                                [{"from": 0, "to": None, "id": fid, "original": True}]))
+                        elif size_mb <= max_mb:
+                            local = os.path.join(TMP_DIR, f"drv_{fid}{os.path.splitext(f.get('name', ''))[1] or '.mp4'}")
+                            try:
+                                await asyncio.to_thread(self.drive.download, fid, local)
+                                hq_path = [p for p in (material, pillar) if p] or ["_TO SORT"]
+                                await self._hq_parts(mid, local, f.get("name", f"{fid}.mp4"), hq_path,
+                                                     {"id": fid, "webViewLink": f.get("webViewLink", "")})
+                            finally:
+                                if os.path.exists(local):
+                                    os.remove(local)
+                        else:
+                            await asyncio.to_thread(self.sheet.set_cell, mid, "S",
+                                                    f"{note}; over {max_mb:.0f} MB — trim/split it to use it")
+                    elif kind == "photo":
+                        await asyncio.to_thread(self.sheet.set_cell, mid, "T", f.get("webViewLink", ""))
+                    done += 1
+                    log.info("Drive import: %s (%s, %.1f MB) -> %s", f.get("name"), kind, size_mb, status)
+                except Exception:
+                    log.exception("Drive import failed for %s", fid)
+        self.stats["drive_imported"] = self.stats.get("drive_imported", 0) + done
+        self.stats["drive_import_left"] = max(0, len(todo) - done)
+        return done
+
     async def reclassify(self, per_run: int) -> int:
         """Re-run the AI classifier on rows filed under _TO SORT because the AI call failed earlier
         (no summary written). Confident results move the Drive file into its proper folder and update the row.
@@ -376,7 +444,7 @@ class Archiver:
         todo = []
         for r in rows:
             r = r + [""] * (16 - len(r))
-            if r[0].isdigit() and r[6] and r[15].startswith("to sort") and not r[11] and not r[12]:
+            if r[0].lstrip("-").isdigit() and r[6] and r[15].startswith("to sort") and not r[11] and not r[12]:
                 todo.append(r)
         todo.sort(key=lambda r: r[1], reverse=True)  # newest first: what the video maker needs soonest
         done = 0
@@ -413,7 +481,9 @@ class Archiver:
                     pre = f"{self.profile.key}_" if kind == "voice" else ""
                     name = (f"{old_name[:8]}_{pre}{slug(c.material)}_{slug(c.product_type)}_{slug(pillar_label)}_"
                             f"{tag}{msg_id}{ext}")
-                    if kind == "voice" and self.cfg.voice_folder(self.profile.key):  # voice notes stay in the one voice folder
+                    if r[2] == "Drive upload":  # the owner's own Drive files are never moved or renamed
+                        name, link = old_name, r[5]
+                    elif kind == "voice" and self.cfg.voice_folder(self.profile.key):  # voice notes stay in the one voice folder
                         if path == [TO_SORT]:
                             name = old_name
                         moved = await asyncio.to_thread(self.drive.move_rename, file_id, name, self.cfg.voice_folder(self.profile.key))

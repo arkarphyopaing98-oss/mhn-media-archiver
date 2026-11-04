@@ -108,6 +108,10 @@ async def main() -> None:
                     await a.poll_recent()
                     await a.reclassify(int(os.environ.get("RECLASSIFY_PER_RUN", "15")))
                     await a.hq_backfill(hq_days, hq_per)
+                    if os.environ.get("DRIVE_IMPORT", "true").lower() in {"1", "true", "yes"}:
+                        await a.drive_import(int(os.environ.get("DRIVE_IMPORT_PER_RUN", "8")),
+                                             float(os.environ.get("DRIVE_IMPORT_MAX_MB", "400")),
+                                             int(os.environ.get("DRIVE_IMPORT_EVERY_MINUTES", "60")))
                 except Exception:
                     log.exception("[%s] poll failed", a.profile.key)
             await asyncio.sleep(every)

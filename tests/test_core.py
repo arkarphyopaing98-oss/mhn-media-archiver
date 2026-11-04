@@ -95,3 +95,40 @@ def test_media_kind_voice():
     assert media_kind(_tg(document=True, file=SimpleNamespace(mime_type="audio/mpeg"))) == "voice"
     assert media_kind(_tg(voice=True, file=ogg), include_voice=False) is None
     assert media_kind(_tg(video=True, file=SimpleNamespace(mime_type="video/mp4"))) == "video"
+
+
+# --- Drive import (owner 2026-11-04: files dropped straight into TIKTOK RAW) ---
+from app.drive_import import candidates, folder_guess, import_id, is_archiver_file, posted_at
+from app.taxonomy import PROFILES
+
+
+def test_import_id_stable_negative():
+    a = import_id("1AbC")
+    assert a < 0 and a == import_id("1AbC") and a != import_id("1AbD")
+
+
+def test_archiver_files_are_skipped():
+    assert is_archiver_file({"description": "story\nFrom Arkar, Telegram msg 1506"})
+    assert is_archiver_file({"description": "HQ part 1/2 (0-20s) of x.mp4"})
+    assert not is_archiver_file({"name": "IMG_0454.MOV", "description": ""})
+
+
+def test_candidates_new_media_only_oldest_first_no_copies():
+    files = [
+        ({"id": "a", "name": "b.MOV", "mimeType": "video/quicktime", "size": "5", "modifiedTime": "2026-09-02T00:00:00Z"}, ("UPVC",)),
+        ({"id": "b", "name": "a.jpg", "mimeType": "image/jpeg", "size": "7", "modifiedTime": "2025-12-01T00:00:00Z"}, ()),
+        ({"id": "c", "name": "a.jpg", "mimeType": "image/jpeg", "size": "7", "modifiedTime": "2025-12-01T00:00:00Z"}, ()),  # copy
+        ({"id": "d", "name": "doc.pdf", "mimeType": "application/pdf"}, ()),
+        ({"id": "e", "name": "x.mp4", "mimeType": "video/mp4", "description": "Telegram msg 5"}, ()),
+        ({"id": "known", "name": "k.jpg", "mimeType": "image/jpeg"}, ()),
+    ]
+    got = [f["id"] for f, _ in candidates(files, {"known"})]
+    assert got == ["b", "a"]
+
+
+def test_folder_guess_and_posted_at():
+    p = PROFILES["mhn"]
+    assert folder_guess(("UPVC", "INSTALLATION", "2025 jobs"), p) == ("UPVC", "INSTALLATION")
+    assert folder_guess(("random",), p) == ("", "")
+    assert posted_at({"imageMediaMetadata": {"time": "2025:12:26 10:17:01"}}, "Asia/Yangon") == "2025-12-26 10:17"
+    assert posted_at({"modifiedTime": "2026-09-28T07:59:25.516Z"}, "Asia/Yangon") == "2026-09-28 14:29"

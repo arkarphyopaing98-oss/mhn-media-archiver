@@ -78,6 +78,33 @@ class Drive:
         return self.svc.files().update(fileId=file_id, body={"name": new_name}, fields="id, webViewLink",
                                        **kw).execute()
 
+    FILE_FIELDS = ("id, name, mimeType, size, description, createdTime, modifiedTime, webViewLink, "
+                   "videoMediaMetadata(durationMillis), imageMediaMetadata(time)")
+
+    def list_children(self, folder_id: str) -> list[dict]:
+        """All non-trashed direct children of a folder (files and folders), paginated."""
+        out, token = [], None
+        while True:
+            resp = self.svc.files().list(
+                q=f"'{folder_id}' in parents and trashed = false", pageSize=1000, pageToken=token,
+                fields=f"nextPageToken, files({self.FILE_FIELDS})").execute()
+            out += resp.get("files", [])
+            token = resp.get("nextPageToken")
+            if not token:
+                return out
+
+    def walk(self, root_id: str, skip_folder_names: set[str], skip_folder_ids: set[str], _path=()) -> list[tuple[dict, tuple]]:
+        """Every file under root_id as (file, folder-name path), skipping the named/id'd folders."""
+        found = []
+        for f in self.list_children(root_id):
+            if f.get("mimeType") == FOLDER_MIME:
+                if f["name"] in skip_folder_names or f["id"] in skip_folder_ids:
+                    continue
+                found += self.walk(f["id"], skip_folder_names, skip_folder_ids, _path + (f["name"],))
+            else:
+                found.append((f, _path))
+        return found
+
     def download(self, file_id: str, local_path: str) -> None:
         req = self.svc.files().get_media(fileId=file_id)
         with open(local_path, "wb") as fh:

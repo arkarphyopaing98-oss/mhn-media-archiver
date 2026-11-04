@@ -38,6 +38,17 @@ Voice notes / audio files in the group are archived too (`INCLUDE_VOICE=true`, d
 
 **Team rule:** send the video, then type the story (where, which product, what's happening, customer name if they agree).
 
+## Drive uploads 📁 (owner 2026-11-04)
+
+Photos/videos dropped **straight into the Drive root** (`TIKTOK RAW/…`, any sub-folder) also get a Log row, so the
+TikTok video maker can use them. Once an hour (`DRIVE_IMPORT_EVERY_MINUTES`, default 60) the archiver scans the tree
+(skips `_HQ PARTS`, `_PROXY 720p`, the voice folder and files it uploaded itself) and logs up to `DRIVE_IMPORT_PER_RUN`
+(default 8) new files per poll until all are in:
+- column A = a stable **negative** id from the Drive file id, sender = `Drive upload`, posted_at = capture/modified date;
+- material + pillar from the folder name when it is a taxonomy folder (e.g. `UPVC/INSTALLATION`), else the AI classifier;
+- videos ≤ 9.3 MB → column T = the original; bigger (≤ `DRIVE_IMPORT_MAX_MB`, default 400) → HQ parts; bigger still → note in column S;
+- the owner's files are **never moved or renamed**. `DRIVE_IMPORT=false` turns it off. Progress: `/status` → `drive_imported`, `drive_import_left`.
+
 ## Setup (one time, ~30 min)
 
 1. **Telegram login:** get `TG_API_ID`/`TG_API_HASH` at https://my.telegram.org, then on your computer run
