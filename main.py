@@ -62,8 +62,9 @@ async def main() -> None:
         await asyncio.Event().wait()  # stay up for the browser login
     cfg = Config.from_env()
     # Which Google OAuth client is in use (no secrets): compare the ID ending with Google Cloud -> Clients.
-    log.info("Google OAuth check: client_id=...%s · secret looks %s (len %d) · refresh token looks %s (len %d)",
-             cfg.google_client_id[-28:],
+    _cid = cfg.google_client_id.split(".apps.")[0]
+    log.info("Google OAuth check: client_id=%s…%s · secret looks %s (len %d) · refresh token looks %s (len %d)",
+             _cid[:6], _cid[-6:],
              "OK" if cfg.google_client_secret.startswith("GOCSPX-") else "WRONG (should start GOCSPX-)",
              len(cfg.google_client_secret),
              "OK" if cfg.google_refresh_token.startswith("1//") else "WRONG (should start 1//)",
