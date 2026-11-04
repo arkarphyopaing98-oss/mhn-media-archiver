@@ -61,6 +61,13 @@ async def main() -> None:
         await run_setup_server(int(os.environ.get("PORT", "10000")))
         await asyncio.Event().wait()  # stay up for the browser login
     cfg = Config.from_env()
+    # Which Google OAuth client is in use (no secrets): compare the ID ending with Google Cloud -> Clients.
+    log.info("Google OAuth check: client_id=...%s · secret looks %s (len %d) · refresh token looks %s (len %d)",
+             cfg.google_client_id[-28:],
+             "OK" if cfg.google_client_secret.startswith("GOCSPX-") else "WRONG (should start GOCSPX-)",
+             len(cfg.google_client_secret),
+             "OK" if cfg.google_refresh_token.startswith("1//") else "WRONG (should start 1//)",
+             len(cfg.google_refresh_token))
     ref: dict = {}
     await start_health_server(cfg.port, ref)  # Render needs the port open quickly
 
