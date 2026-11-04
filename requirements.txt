@@ -1,5 +1,5 @@
 telethon==1.36.0
-cryptg>=0.4
+cryptg==0.5.0.post0  # 0.6.x has no py3.11 wheel -> Rust build fails on Render (2026-11-04)
 google-api-python-client>=2.100
 google-auth>=2.23
 aiohttp>=3.9
