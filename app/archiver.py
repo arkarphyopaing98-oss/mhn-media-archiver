@@ -451,7 +451,10 @@ class Archiver:
             return 0
         self.stats["_pick_at"] = now
         rows = await asyncio.to_thread(self.sheet.rows, "A2:V")
-        out = build(rows, datetime.now(self.tz).date())
+        from .pick import CLIP_REST_BY_PROFILE, CLIP_REST_DAYS
+        key = self.profile.key
+        rest = int(os.environ.get(f"CLIP_REST_DAYS_{key.upper()}", CLIP_REST_BY_PROFILE.get(key, CLIP_REST_DAYS)))
+        out = build(rows, datetime.now(self.tz).date(), rest)
         await asyncio.to_thread(self.sheet.write_tab, tab, [HEADER] + out)
         self.stats["pick_rows"] = len(out)
         self.stats["pick_jobs"] = len({r[2] for r in out})

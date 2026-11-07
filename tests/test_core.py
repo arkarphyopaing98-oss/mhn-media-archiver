@@ -187,3 +187,13 @@ def test_pick_alternates_new_and_archive_and_groups_jobs():
     assert [r[1] for r in out if r[0] in (3, 4)] == ["new", "archive"]
     assert job_id(rows[0]) == job_id(rows[1])
     assert {"7", "8"} <= {r[3] for r in out}
+
+
+def test_clip_rest_days_override():
+    from datetime import date
+    from app.pick import build
+    row = [""] * 22
+    row[0], row[1], row[2], row[3], row[6], row[7], row[8], row[14], row[15], row[16] = \
+        "500", "2026-10-20 10:00", "Staff", "video", "fid", "RM", "BRICK", "5", "new", "2026-11-01"
+    assert build([row], date(2026, 11, 7)) == []          # 6 days < 14-day rest
+    assert len(build([row], date(2026, 11, 9), 7)) == 1    # 8 days > 7-day rest (RM)

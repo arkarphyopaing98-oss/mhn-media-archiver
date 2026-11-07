@@ -18,6 +18,8 @@ A_ID, B_POSTED, C_SENDER, D_KIND, F_LINK, G_FILE, H_MAT, I_PROD, J_PIL, K_STORY,
 N_DUR, O_SIZE, P_STATUS, Q_USED, R_QC, T_EDIT, U_HQ = 13, 14, 15, 16, 17, 19, 20
 
 CLIP_REST_DAYS = 14
+# Per-profile override (owner 2026-11-07: RM 7 days, temporary). Env CLIP_REST_DAYS_<PROFILE> wins.
+CLIP_REST_BY_PROFILE = {"rm": 7}
 JOB_REST_DAYS = 7
 NEW_DAYS = 7
 MAX_CLIPS_PER_JOB = 4
@@ -63,9 +65,10 @@ def usable(r: list) -> bool:
     return bool(_c(r, G_FILE) or _c(r, F_LINK))
 
 
-def build(rows: list[list], today: date) -> list[list]:
-    """rows = Log data rows (no header). Returns Pick rows (no header), best first."""
-    clip_cut, job_cut, new_cut = (today - timedelta(days=CLIP_REST_DAYS), today - timedelta(days=JOB_REST_DAYS),
+def build(rows: list[list], today: date, clip_rest_days: int = CLIP_REST_DAYS) -> list[list]:
+    """rows = Log data rows (no header). Returns Pick rows (no header), best first.
+    clip_rest_days: per tenant (RM = 7 days, owner 2026-11-07, temporary while RM footage is scarce)."""
+    clip_cut, job_cut, new_cut = (today - timedelta(days=clip_rest_days), today - timedelta(days=JOB_REST_DAYS),
                                   today - timedelta(days=NEW_DAYS))
     job_used: dict[str, date] = {}
     for r in rows:  # last use of ANY clip of the job (even unusable rows count)
@@ -115,5 +118,5 @@ def build(rows: list[list], today: date) -> list[list]:
                         job_used[j].isoformat() if j in job_used else "", _c(r, R_QC), ""])
     if out:
         out[0][-1] = (f"1 post per job (same rank) per day · job rests {JOB_REST_DAYS}d · clip rests "
-                      f"{CLIP_REST_DAYS}d · new/archive alternate 50/50 · write Log Q used_on when you pick")
+                      f"{clip_rest_days}d · new/archive alternate 50/50 · write Log Q used_on when you pick")
     return out
