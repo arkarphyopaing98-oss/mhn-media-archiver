@@ -101,6 +101,30 @@ async def main() -> None:
                 asyncio.create_task(arch.on_new_message(event.message))
             return h
         client.add_event_handler(_handler(a), events.NewMessage(chats=chat))
+    # Relay groups (owner 2026-11-07): big (> 19 MB) owner videos in a shop's AI VIDEO group get HQ parts in Drive.
+    relays = json.loads(os.environ.get("RELAY_GROUPS", '[{"profile":"rm","group":-1003475765371}]') or "[]")
+    for r in relays:
+        arch = next((a for a in archivers if a.profile.key == r["profile"]), None)
+        if arch is None:
+            continue
+        try:
+            rchat = await resolve_chat(client, str(r["group"]))
+        except Exception:
+            log.exception("[%s] relay group %s not reachable", r["profile"], r["group"])
+            continue
+
+        def _relay(arch, rchat):
+            async def h(event):  # noqa: ANN001
+                await asyncio.sleep(20)
+                asyncio.create_task(arch.relay_big(event.message))
+            async def backlog():  # last 30 messages, in case something was posted while we were down
+                async for m in client.iter_messages(rchat, limit=30):
+                    await arch.relay_big(m)
+            return h, backlog
+        h, backlog = _relay(arch, rchat)
+        client.add_event_handler(h, events.NewMessage(chats=rchat))
+        asyncio.create_task(backlog())
+        log.info("[%s] relaying big videos from: %s", r["profile"], getattr(rchat, "title", r["group"]))
     ref["a"] = archivers[0]
     ref["all"] = archivers
 

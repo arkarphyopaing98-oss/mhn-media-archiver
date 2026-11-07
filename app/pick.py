@@ -23,7 +23,7 @@ CLIP_REST_BY_PROFILE = {"rm": 7}
 JOB_REST_DAYS = 7
 NEW_DAYS = 7
 MAX_CLIPS_PER_JOB = 4
-BAD_STATUS = ("duplicate", "excluded", "processing", "reject", "skip")
+BAD_STATUS = ("duplicate", "excluded", "processing", "reject", "skip", "relay")
 
 HEADER = ["rank", "bucket", "job_id", "tg_msg_id", "posted_at", "media_type", "material", "product_type", "pillar",
           "duration_s", "size_mb", "edit_link", "hq_parts", "drive_file_id", "ai_summary", "story", "job_last_used",

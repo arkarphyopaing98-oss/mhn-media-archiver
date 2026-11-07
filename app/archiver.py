@@ -305,6 +305,57 @@ class Archiver:
         except Exception:
             log.exception("HQ parts failed for msg %s", msg_id)
 
+    RELAY_OFFSET = 900_000_000  # Log id = this + message id, so relay rows never clash with Product History ids
+
+    async def relay_big(self, m: Message, relay_name: str = "AI VIDEO") -> None:
+        """Owner/staff video posted in the shop's AI VIDEO group that is too big for the Bot API (> 19 MB):
+        download it with this user session, cut full-quality HQ parts (<= 9.3 MB each) into Drive
+        _RELAY/<msg id>/, and log one row (status "relay", never in the Pick tab) whose story names the
+        AI VIDEO message, so the video maker's voice.py needs_footage step finds it (owner 2026-11-07)."""
+        kind = self.kind(m)
+        if kind != "video" or not m.file or (m.file.size or 0) < 19 * 1_048_576:
+            return
+        sender = await m.get_sender()
+        if getattr(sender, "bot", False):
+            return  # the bot's own rendered posts
+        rid = self.RELAY_OFFSET + m.id
+        async with self.lock:
+            if rid in self.seen:
+                return
+            self.seen.add(rid)
+            size_mb = round(m.file.size / 1_048_576, 1)
+            duration = getattr(m.file, "duration", None) or ""
+            local_date = m.date.astimezone(self.tz)
+            name = " ".join(filter(None, [getattr(sender, "first_name", ""), getattr(sender, "last_name", "")])) or str(m.sender_id)
+            local_path = os.path.join(TMP_DIR, f"relay_{m.id}{m.file.ext or '.mp4'}")
+            try:
+                await self.client.download_media(m, file=local_path)
+                parts = await asyncio.to_thread(split_for_drive, local_path)
+                fid = await asyncio.to_thread(self.drive.folder_for, ["_RELAY", str(m.id)])
+                out, first = [], ""
+                for k, (p, a, b) in enumerate(parts, start=1):
+                    try:
+                        up = await asyncio.to_thread(self.drive.upload, p, f"relay_{m.id}_p{k:02d}.mp4", "video/mp4", fid,
+                                                     f"HQ part {k}/{len(parts)} of {relay_name} msg {m.id}")
+                        out.append({"from": a, "to": b, "id": up.get("id", "")})
+                        first = first or up.get("webViewLink", "")
+                    finally:
+                        if os.path.exists(p):
+                            os.remove(p)
+                story = f"{relay_name} msg {m.id} (big video, relayed){chr(10)}{m.message or ''}".strip()
+                row = [rid, local_date.strftime("%Y-%m-%d %H:%M"), name, kind, f"relay_{m.id}", first, "",
+                       "", "", "", story, "", "", duration, size_mb, "relay (AI VIDEO, not footage)", "", "", "",
+                       first, json.dumps(out)]  # ... P status, Q used, R qc, S notes, T edit link, U hq_parts
+                await asyncio.to_thread(self.sheet.append, row)
+                self.stats["relayed"] = self.stats.get("relayed", 0) + 1
+                log.info("Relayed big %s msg %s (%.1f MB) -> %d HQ parts", relay_name, m.id, size_mb, len(out))
+            except Exception:
+                self.seen.discard(rid)
+                log.exception("Relay failed for %s msg %s", relay_name, m.id)
+            finally:
+                if os.path.exists(local_path):
+                    os.remove(local_path)
+
     async def poll_recent(self, window: int = 400) -> int:
         """Safety net for missed live updates: scan the newest messages and archive any unseen media
         (older than the story wait, so the live handler still gets first go)."""
